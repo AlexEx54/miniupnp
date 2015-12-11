@@ -144,6 +144,20 @@ FreeUPNPUrls(struct UPNPUrls *);
 MINIUPNP_LIBSPEC int UPNPIGD_IsConnected(struct UPNPUrls *, struct IGDdatas *);
 
 
+struct IGDInfos {
+    struct IGDdatas data;
+    struct UPNPUrls* urls;
+    char lanAddr[64];
+
+    struct IGDInfos* next;
+};
+
+
+LIBSPEC void FreeIGDInfos(struct IGDInfos* firstInfo);
+
+LIBSPEC struct IGDInfos* UPNP_GetValidConnectedIGDs(struct UPNPDev* devlist);
+
+
 #ifdef __cplusplus
 }
 #endif

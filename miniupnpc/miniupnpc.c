@@ -682,3 +682,126 @@ UPNP_GetIGDFromUrl(const char * rootdescurl,
 	}
 }
 
+
+
+
+void FreeIGDInfos(struct IGDInfos* firstInfo) {
+    struct IGDInfos* currentInfo = firstInfo;
+    struct IGDInfos* tmp = NULL;
+
+    while (currentInfo != NULL) {
+        FreeUPNPUrls(currentInfo->urls);
+
+        tmp = currentInfo;
+        currentInfo = currentInfo->next;
+
+        free(tmp);
+    }
+}
+
+
+struct IGDInfos* CreateIGDInfo() {
+    struct IGDInfos* result = calloc(1, sizeof(struct IGDInfos));
+    result->urls = calloc(1, sizeof(struct UPNPUrls));
+
+    return result;
+}
+
+
+struct IGDInfosList {
+    struct IGDInfos* first;
+    struct IGDInfos* last;
+};
+
+
+void AddToIGDInfosList(struct IGDInfosList* list, struct IGDInfos* element) {
+    if (list->first == NULL) {
+        list->first = element;
+    }
+
+    if (list->last != NULL) {
+        list->last->next = element;
+    }
+
+    list->last = element;
+}
+
+
+struct IGDInfos* UPNP_GetValidConnectedIGDs(struct UPNPDev* devlist) {
+        struct xml_desc {
+            char * xml;
+            int size;
+        } * desc = NULL;
+
+        struct IGDInfosList resultList;
+        struct IGDInfos* currentIgd = NULL;
+        int ndev = 0;
+        struct UPNPDev* dev;
+        int i;
+
+        memset(&resultList, 0, sizeof(resultList));
+
+        if(devlist == NULL) {
+            return NULL;
+        }
+
+        for(dev = devlist; dev; dev = dev->pNext)
+            ndev++;
+
+        if (ndev == 0) {
+            return NULL;
+        }
+
+        desc = calloc(ndev, sizeof(struct xml_desc));
+        if(desc == NULL) {
+            return NULL; /* memory allocation error */
+        }
+
+        for(dev = devlist, i = 0; dev; dev = dev->pNext, i++) {
+            currentIgd = CreateIGDInfo();
+
+            desc[i].xml = miniwget_getaddr(dev->descURL, &(desc[i].size),
+                                           currentIgd->lanAddr, sizeof(currentIgd->lanAddr) - 1,
+                                           dev->scope_id);
+            if (desc[i].xml) {
+                parserootdesc(desc[i].xml, desc[i].size, &(currentIgd->data));
+                if(0==strcmp(currentIgd->data.CIF.servicetype,
+                             "urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1")) {
+
+                    GetUPNPUrls(currentIgd->urls, &(currentIgd->data), dev->descURL, dev->scope_id);
+                    if (UPNPIGD_IsConnected(currentIgd->urls, &(currentIgd->data))) {
+                        AddToIGDInfosList(&resultList, currentIgd);
+                        continue;
+                    }
+                    FreeUPNPUrls(currentIgd->urls);
+
+                    if(currentIgd->data.second.servicetype[0] != '\0') {
+                        memcpy(&currentIgd->data.tmp, &currentIgd->data.first, sizeof(struct IGDdatas_service));
+                        memcpy(&currentIgd->data.first, &currentIgd->data.second, sizeof(struct IGDdatas_service));
+                        memcpy(&currentIgd->data.second, &currentIgd->data.tmp, sizeof(struct IGDdatas_service));
+
+                        GetUPNPUrls(currentIgd->urls, &(currentIgd->data), dev->descURL, dev->scope_id);
+
+                        if(UPNPIGD_IsConnected(currentIgd->urls, &(currentIgd->data))) {
+                            AddToIGDInfosList(&resultList, currentIgd);
+                            continue;
+                        }
+                    }
+                }
+            }
+            FreeIGDInfos(currentIgd);
+        }
+
+        if(desc) {
+            for(i = 0; i < ndev; i++) {
+                if(desc[i].xml) {
+                    free(desc[i].xml);
+                }
+            }
+            free(desc);
+        }
+
+        return resultList.first;
+}
+
+
